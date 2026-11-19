@@ -11,11 +11,9 @@ app.use(express.json({ limit: "1mb" }));
 const PORT = process.env.PORT || 3000;
 const PAY_TO = "0x65aF738Cdc6B21E9dAFA5F55223e63Aaf22d7F21";
 const NETWORK = "eip155:8453";
-const FACILITATOR_URL = (process.env.FACILITATOR_URL || "https://facilitator.xpay.sh").trim().replace(/\]+$/, "");
+const FACILITATOR_URL = process.env.FACILITATOR_URL || "https://facilitator.xpay.sh";
 
-const facilitatorClient = new HTTPFacilitatorClient({
-  url: FACILITATOR_URL
-});
+const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR_URL });
 
 const resourceServer = new x402ResourceServer(facilitatorClient)
   .register(NETWORK, new ExactEvmScheme());
@@ -34,7 +32,7 @@ const routes = {
     mimeType: "application/json",
     extensions: {
       ...declareDiscoveryExtension({
-        input: { url: "https://example.com" },
+        input: { url: "https://en.wikipedia.org/wiki/Main_Page" },
         inputSchema: {
           properties: {
             url: { type: "string", description: "Target HTTP/HTTPS URL to fetch and extract clean text from." }
@@ -45,10 +43,10 @@ const routes = {
           example: {
             tier: "bulk_extraction",
             price_paid: "0.01 USDC",
-            source_url: "https://example.com",
-            title: "Example Domain",
-            word_count: 28,
-            extracted_text: "Example Domain This domain is for use in illustrative examples..."
+            source_url: "https://en.wikipedia.org/wiki/Main_Page",
+            title: "Wikipedia, the free encyclopedia",
+            word_count: 142,
+            extracted_text: "Wikipedia Main Page Welcome to Wikipedia..."
           }
         }
       })
@@ -124,9 +122,50 @@ const routes = {
   }
 };
 
+app.get("/", (req, res) => {
+  res.json({
+    service: "UE&D Express Autonomous Intelligence Storefront",
+    status: "online",
+    protocol: "x402",
+    network: NETWORK,
+    manifest: "https://ueandd-express.onrender.com/.well-known/agent-card.json"
+  });
+});
+
+app.get("/.well-known/agent-card.json", (req, res) => {
+  res.json({
+    name: "UE&D Express Autonomous Intelligence Storefront",
+    description: "Production x402 micro-services settling in USDC on Base Mainnet.",
+    protocol: "x402",
+    version: "2.1",
+    base_url: "https://ueandd-express.onrender.com",
+    network: NETWORK,
+    payee_wallet: PAY_TO,
+    endpoints: [
+      {
+        path: "/api/v1/extract",
+        method: "GET",
+        price_usdc: "0.01",
+        description: "Clean URL metadata and readable text extraction."
+      },
+      {
+        path: "/api/v1/niche-lookup",
+        method: "GET",
+        price_usdc: "0.05",
+        description: "Live Base & multi-chain DEX liquidity, volume, and risk score lookup."
+      },
+      {
+        path: "/api/v1/verify-compute",
+        method: "POST",
+        price_usdc: "0.15",
+        description: "Deterministic canonical JSON SHA-256/SHA-512 attestation and structural audit."
+      }
+    ]
+  });
+});
+
 app.use(paymentMiddleware(routes, resourceServer));
 
-// Helper: Canonicalize JSON recursively so key order is deterministic
 function canonicalize(value) {
   if (Array.isArray(value)) {
     return value.map(canonicalize);
@@ -142,7 +181,6 @@ function canonicalize(value) {
   return value;
 }
 
-// Helper: Inspect JSON structure for depth, key count, and null/empty anomalies
 function inspectPayload(value, depth = 1) {
   if (value === null || value === undefined || value === "") {
     return { keys: 0, maxDepth: depth, nullOrEmptyCount: 1 };
@@ -175,22 +213,6 @@ function inspectPayload(value, depth = 1) {
   return { keys: 0, maxDepth: depth, nullOrEmptyCount: 0 };
 }
 
-// ==========================================
-// ROOT STATUS ROUTE (FREE / UNGATED)
-// ==========================================
-app.get("/", (req, res) => {
-  res.json({
-    service: "UE&D Express Autonomous Intelligence Storefront",
-    status: "online",
-    protocol: "x402",
-    network: NETWORK,
-    manifest: "https://ueandd-express.onrender.com/.well-known/agent-card.json"
-  });
-});
-
-// ==========================================
-// TIER 1: Clean URL Extraction ($0.01)
-// ==========================================
 app.get("/api/v1/extract", async (req, res) => {
   const targetUrl = req.query.url;
   if (!targetUrl) {
@@ -260,9 +282,6 @@ app.get("/api/v1/extract", async (req, res) => {
   }
 });
 
-// ==========================================
-// TIER 2: Live DEX & Token Intelligence ($0.05)
-// ==========================================
 app.get("/api/v1/niche-lookup", async (req, res) => {
   const queryKey = (req.query.key || "").trim();
   if (!queryKey) {
@@ -290,7 +309,6 @@ app.get("/api/v1/niche-lookup", async (req, res) => {
       });
     }
 
-    // Prefer Base pairs first if available, then sort by highest USD liquidity
     const sorted = pairs.sort((a, b) => {
       const aBase = a.chainId === "base" ? 1 : 0;
       const bBase = b.chainId === "base" ? 1 : 0;
@@ -306,7 +324,6 @@ app.get("/api/v1/niche-lookup", async (req, res) => {
     const buySellRatio = sells24h > 0 ? Number((buys24h / sells24h).toFixed(2)) : buys24h;
     const priceChange24h = Number(top.priceChange?.h24 || 0);
 
-    // Deterministic liquidity health score (0-100)
     let score = 20;
     if (liquidityUsd >= 1000000) score += 40;
     else if (liquidityUsd >= 100000) score += 25;
@@ -347,9 +364,6 @@ app.get("/api/v1/niche-lookup", async (req, res) => {
   }
 });
 
-// ==========================================
-// TIER 3: Cryptographic Compute Verification ($0.15)
-// ==========================================
 app.post("/api/v1/verify-compute", (req, res) => {
   const payloadData = req.body?.data;
   const expectedSha256 = req.body?.expected_sha256;
@@ -386,41 +400,6 @@ app.post("/api/v1/verify-compute", (req, res) => {
       null_or_empty_fields: stats.nullOrEmptyCount,
       anomaly_detected: anomalyDetected
     }
-  });
-});
-
-// ==========================================
-// AGENT DISCOVERY MANIFEST (FREE / UNGATED)
-// ==========================================
-app.get("/.well-known/agent-card.json", (req, res) => {
-  res.json({
-    name: "UE&D Express Autonomous Intelligence Storefront",
-    description: "Production x402 micro-services settling in USDC on Base Mainnet.",
-    protocol: "x402",
-    version: "2.1",
-    base_url: "https://ueandd-express.onrender.com",
-    network: NETWORK,
-    payee_wallet: PAY_TO,
-    endpoints: [
-      {
-        path: "/api/v1/extract",
-        method: "GET",
-        price_usdc: "0.01",
-        description: "Clean URL metadata and readable text extraction."
-      },
-      {
-        path: "/api/v1/niche-lookup",
-        method: "GET",
-        price_usdc: "0.05",
-        description: "Live Base & multi-chain DEX liquidity, volume, and risk score lookup."
-      },
-      {
-        path: "/api/v1/verify-compute",
-        method: "POST",
-        price_usdc: "0.15",
-        description: "Deterministic canonical JSON SHA-256/SHA-512 attestation and structural audit."
-      }
-    ]
   });
 });
 
