@@ -1,51 +1,157 @@
-const express = require('express');
-const app = express();
+import express from "express";
+import { paymentMiddleware, x402ResourceServer } from "@x402/express";
+import { HTTPFacilitatorClient } from "@x402/core/server";
+import { ExactEvmScheme } from "@x402/evm/exact/server";
+import { declareDiscoveryExtension } from "@x402/extensions/bazaar";
 
+const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
-const SELLER_WALLET = process.env.SELLER_WALLET || "0x65aF738Cdc6B21E9dAFA5F55223e63Aaf22d7F21";
-const NETWORK = "base";
+const PAY_TO = "0x65aF738Cdc6B21E9dAFA5F55223e63Aaf22d7F21";
+const NETWORK = "eip155:8453"; // Base Mainnet
+const FACILITATOR_URL = process.env.FACILITATOR_URL || "https://facilitator.openmid.xyz";
 
-function x402Paywall(priceUsdc) {
-  return async (req, res, next) => {
-    const paymentHeader = req.headers['x-payment'] || req.headers['payment-signature'];
+// 1. Connect to live x402 facilitator for cryptographic verification & on-chain USDC settlement
+const facilitatorClient = new HTTPFacilitatorClient({
+  url: FACILITATOR_URL
+});
 
-    if (!paymentHeader) {
-      res.setHeader('PAYMENT-REQUIRED', JSON.stringify({
-        amount: priceUsdc,
-        currency: 'USDC',
+const resourceServer = new x402ResourceServer(facilitatorClient)
+  .register(NETWORK, new ExactEvmScheme());
+
+// 2. Define paid routes + Bazaar discovery schemas (no fake headers can bypass this)
+const routes = {
+  "GET /api/v1/extract": {
+    accepts: [
+      {
+        scheme: "exact",
+        price: "$0.01",
         network: NETWORK,
-        payee: SELLER_WALLET
-      }));
-
-      return res.status(402).json({
-        error: "Payment Required",
-        message: `This endpoint requires an x402 micro-payment of ${priceUsdc} USDC.`,
-        price_usdc: priceUsdc,
-        network: NETWORK,
-        payee_wallet: SELLER_WALLET
-      });
+        payTo: PAY_TO
+      }
+    ],
+    description: "Clean high-concurrency URL text extraction that strips HTML boilerplate into plain text.",
+    mimeType: "application/json",
+    extensions: {
+      ...declareDiscoveryExtension({
+        input: { url: "https://example.com" },
+        inputSchema: {
+          properties: {
+            url: { type: "string", description: "Target HTTP/HTTPS URL to fetch and extract clean text from." }
+          },
+          required: ["url"]
+        },
+        output: {
+          example: {
+            tier: "bulk_extraction",
+            price_paid: "0.01 USDC",
+            source_url: "https://example.com",
+            extracted_text: "Example Domain..."
+          }
+        }
+      })
     }
+  },
+  "GET /api/v1/niche-lookup": {
+    accepts: [
+      {
+        scheme: "exact",
+        price: "$0.05",
+        network: NETWORK,
+        payTo: PAY_TO
+      }
+    ],
+    description: "Structured market intelligence and risk-score lookup by query key.",
+    mimeType: "application/json",
+    extensions: {
+      ...declareDiscoveryExtension({
+        input: { key: "base-usdc" },
+        inputSchema: {
+          properties: {
+            key: { type: "string", description: "Asset, ticker, or topic identifier to look up." }
+          },
+          required: ["key"]
+        },
+        output: {
+          example: {
+            tier: "niche_data_lookup",
+            price_paid: "0.05 USDC",
+            query: "base-usdc",
+            verified_data: {
+              market_sentiment: "bullish",
+              liquidity_index: 0.884,
+              compliance_flag: false,
+              proprietary_score: 94.2
+            }
+          }
+        }
+      })
+    }
+  },
+  "POST /api/v1/verify-compute": {
+    accepts: [
+      {
+        scheme: "exact",
+        price: "$0.15",
+        network: NETWORK,
+        payTo: PAY_TO
+      }
+    ],
+    description: "Multi-step JSON payload integrity and anomaly verification.",
+    mimeType: "application/json",
+    extensions: {
+      ...declareDiscoveryExtension({
+        input: { data: { sample: "payload" } },
+        inputSchema: {
+          properties: {
+            data: { type: "object", description: "JSON payload object to inspect and verify." }
+          },
+          required: ["data"]
+        },
+        output: {
+          example: {
+            tier: "heavy_compute_verification",
+            price_paid: "0.15 USDC",
+            verification_result: {
+              integrity_checked: true,
+              anomaly_detected: false,
+              confidence_interval: "99.91%",
+              processed_bytes: 20
+            }
+          }
+        }
+      })
+    }
+  }
+};
 
-    // In live production, verify paymentHeader via an x402 facilitator SDK before calling next()
-    next();
-  };
-}
+// 3. Enforce real x402 verification & settlement before protected handlers execute
+app.use(paymentMiddleware(routes, resourceServer));
 
-// Tier 1: $0.01 Bulk Extraction
-app.get('/api/v1/extract', x402Paywall("0.01"), async (req, res) => {
+// ==========================================
+// TIER 1: Bulk High-Concurrency Extraction ($0.01)
+// ==========================================
+app.get("/api/v1/extract", async (req, res) => {
   const targetUrl = req.query.url;
-  if (!targetUrl) return res.status(400).json({ error: "Missing 'url' query parameter." });
+  if (!targetUrl) {
+    return res.status(400).json({ error: "Missing 'url' query parameter." });
+  }
 
   try {
     const response = await fetch(targetUrl, {
-      headers: { 'User-Agent': 'AutonomousAgentReader/1.0' }
+      headers: { "User-Agent": "AutonomousAgentReader/1.0" }
     });
-    if (!response.ok) return res.status(502).json({ error: `Fetch failed with status ${response.status}` });
+    if (!response.ok) {
+      return res.status(502).json({ error: `Fetch failed with status ${response.status}` });
+    }
 
     const html = await response.text();
-    const cleanText = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 5000);
+    const cleanText = html
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .substring(0, 5000);
 
     res.json({
       tier: "bulk_extraction",
@@ -58,10 +164,14 @@ app.get('/api/v1/extract', x402Paywall("0.01"), async (req, res) => {
   }
 });
 
-// Tier 2: $0.05 Niche Lookup
-app.get('/api/v1/niche-lookup', x402Paywall("0.05"), async (req, res) => {
+// ==========================================
+// TIER 2: Niche Data Lookup ($0.05)
+// ==========================================
+app.get("/api/v1/niche-lookup", async (req, res) => {
   const queryKey = req.query.key;
-  if (!queryKey) return res.status(400).json({ error: "Missing 'key' query parameter." });
+  if (!queryKey) {
+    return res.status(400).json({ error: "Missing 'key' query parameter." });
+  }
 
   res.json({
     tier: "niche_data_lookup",
@@ -77,10 +187,14 @@ app.get('/api/v1/niche-lookup', x402Paywall("0.05"), async (req, res) => {
   });
 });
 
-// Tier 3: $0.15 Heavy Compute Verification
-app.post('/api/v1/verify-compute', x402Paywall("0.15"), async (req, res) => {
+// ==========================================
+// TIER 3: Heavy Compute Verification ($0.15)
+// ==========================================
+app.post("/api/v1/verify-compute", async (req, res) => {
   const payloadData = req.body.data;
-  if (!payloadData) return res.status(400).json({ error: "Missing JSON body 'data'." });
+  if (!payloadData) {
+    return res.status(400).json({ error: "Missing JSON body 'data'." });
+  }
 
   res.json({
     tier: "heavy_compute_verification",
@@ -95,21 +209,41 @@ app.post('/api/v1/verify-compute', x402Paywall("0.15"), async (req, res) => {
   });
 });
 
-// Discovery Manifest for AI Agents
-app.get('/.well-known/agent-card.json', (req, res) => {
+// ==========================================
+// AGENT DISCOVERY MANIFEST (FREE / UNGATED)
+// ==========================================
+app.get("/.well-known/agent-card.json", (req, res) => {
   res.json({
-    name: "Multi-Tier Autonomous Intelligence Storefront",
-    description: "High-reliability micro-services for autonomous AI agents settling via x402 USDC on Base.",
+    name: "UE&D Express Autonomous Intelligence Storefront",
+    description: "Production x402 micro-services settling in USDC on Base Mainnet.",
     protocol: "x402",
-    payee_wallet: SELLER_WALLET,
+    version: "2.0",
+    base_url: "https://ueandd-express.onrender.com",
+    network: NETWORK,
+    payee_wallet: PAY_TO,
     endpoints: [
-      { path: "/api/v1/extract", method: "GET", price_usdc: "0.01", description: "Bulk URL text extraction." },
-      { path: "/api/v1/niche-lookup", method: "GET", price_usdc: "0.05", description: "Niche data lookup." },
-      { path: "/api/v1/verify-compute", method: "POST", price_usdc: "0.15", description: "Payload compute verification." }
+      {
+        path: "/api/v1/extract",
+        method: "GET",
+        price_usdc: "0.01",
+        description: "Bulk URL text extraction."
+      },
+      {
+        path: "/api/v1/niche-lookup",
+        method: "GET",
+        price_usdc: "0.05",
+        description: "Niche data lookup."
+      },
+      {
+        path: "/api/v1/verify-compute",
+        method: "POST",
+        price_usdc: "0.15",
+        description: "Payload compute verification."
+      }
     ]
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`Multi-tier AI Storefront running on port ${PORT}`);
+  console.log(`UE&D Express x402 Storefront live on port ${PORT}`);
 });
