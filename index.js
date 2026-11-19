@@ -10,7 +10,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const PAY_TO = "0x65aF738Cdc6B21E9dAFA5F55223e63Aaf22d7F21";
 const NETWORK = "eip155:8453";
-const FACILITATOR_URL = process.env.FACILITATOR_URL || "https://facilitator.openmid.xyz";
+const FACILITATOR_URL = (process.env.FACILITATOR_URL || "https://facilitator.xpay.sh").trim().replace(/\]+$/, "");
 
 const facilitatorClient = new HTTPFacilitatorClient({
   url: FACILITATOR_URL
@@ -100,13 +100,6 @@ const routes = {
     mimeType: "application/json",
     extensions: {
       ...declareDiscoveryExtension({
-        input: { data: { sample: "payload" } },
-        inputSchema: {
-          properties: {
-            data: { type: "object", description: "JSON payload object to inspect and verify." }
-          },
-          required: ["data"]
-        },
         output: {
           example: {
             tier: "heavy_compute_verification",
