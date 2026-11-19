@@ -9,10 +9,9 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 const PAY_TO = "0x65aF738Cdc6B21E9dAFA5F55223e63Aaf22d7F21";
-const NETWORK = "eip155:8453"; // Base Mainnet
+const NETWORK = "eip155:8453";
 const FACILITATOR_URL = process.env.FACILITATOR_URL || "https://facilitator.openmid.xyz";
 
-// 1. Connect to live x402 facilitator for cryptographic verification & on-chain USDC settlement
 const facilitatorClient = new HTTPFacilitatorClient({
   url: FACILITATOR_URL
 });
@@ -20,7 +19,6 @@ const facilitatorClient = new HTTPFacilitatorClient({
 const resourceServer = new x402ResourceServer(facilitatorClient)
   .register(NETWORK, new ExactEvmScheme());
 
-// 2. Define paid routes + Bazaar discovery schemas (no fake headers can bypass this)
 const routes = {
   "GET /api/v1/extract": {
     accepts: [
@@ -126,12 +124,8 @@ const routes = {
   }
 };
 
-// 3. Enforce real x402 verification & settlement before protected handlers execute
 app.use(paymentMiddleware(routes, resourceServer));
 
-// ==========================================
-// TIER 1: Bulk High-Concurrency Extraction ($0.01)
-// ==========================================
 app.get("/api/v1/extract", async (req, res) => {
   const targetUrl = req.query.url;
   if (!targetUrl) {
@@ -164,9 +158,6 @@ app.get("/api/v1/extract", async (req, res) => {
   }
 });
 
-// ==========================================
-// TIER 2: Niche Data Lookup ($0.05)
-// ==========================================
 app.get("/api/v1/niche-lookup", async (req, res) => {
   const queryKey = req.query.key;
   if (!queryKey) {
@@ -187,9 +178,6 @@ app.get("/api/v1/niche-lookup", async (req, res) => {
   });
 });
 
-// ==========================================
-// TIER 3: Heavy Compute Verification ($0.15)
-// ==========================================
 app.post("/api/v1/verify-compute", async (req, res) => {
   const payloadData = req.body.data;
   if (!payloadData) {
@@ -209,9 +197,6 @@ app.post("/api/v1/verify-compute", async (req, res) => {
   });
 });
 
-// ==========================================
-// AGENT DISCOVERY MANIFEST (FREE / UNGATED)
-// ==========================================
 app.get("/.well-known/agent-card.json", (req, res) => {
   res.json({
     name: "UE&D Express Autonomous Intelligence Storefront",
